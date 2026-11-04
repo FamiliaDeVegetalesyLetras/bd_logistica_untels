@@ -1,8 +1,5 @@
 --------------------------------------------------------------------------------
 -- SISTEMA DE GESTIÓN DE BASE DE DATOS - UNTELS
--- SCRIPT MODIFICADO: Validación de existencia de tablas, Índices y ETL
---------------------------------------------------------------------------------
-
 IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = 'BD_LOGISTICA_UNTELS')
 BEGIN
     CREATE DATABASE BD_LOGISTICA_UNTELS
@@ -20,14 +17,10 @@ BEGIN
     );
 END;
 GO
-
 USE BD_LOGISTICA_UNTELS;
 GO
-
 -- ============================================================================
 -- VERIFICACIÓN Y CREACIÓN SEGURA DE TABLAS (Evita errores si ya existen)
--- ============================================================================
-
 IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[TIPO_ORDEN]') AND type in (N'U'))
 BEGIN
     CREATE TABLE TIPO_ORDEN (
@@ -55,7 +48,6 @@ BEGIN
     );
 END;
 GO
-
 IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[ORDEN]') AND type in (N'U'))
 BEGIN
     CREATE TABLE ORDEN (
@@ -77,10 +69,8 @@ BEGIN
     );
 END;
 GO
-
 -- ============================================================================
 -- CREACIÓN SEGURA DE ÍNDICES NO AGRUPADOS (Evita duplicidad)
--- ============================================================================
 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_ORDEN_RUC' AND object_id = OBJECT_ID('ORDEN'))
 BEGIN
     CREATE NONCLUSTERED INDEX IX_ORDEN_RUC ON ORDEN(RUC);
