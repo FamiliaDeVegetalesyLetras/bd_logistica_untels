@@ -1,4 +1,0 @@
-streamlit
-pyodbc
-pandas
-time
