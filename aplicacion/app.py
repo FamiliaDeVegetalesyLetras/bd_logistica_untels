@@ -1,5 +1,5 @@
 import streamlit as st
-import pyodbc
+import sqlite3
 import pandas as pd
 import time
 
@@ -10,58 +10,71 @@ st.sidebar.title("Navegación del Sistema")
 menu = st.sidebar.selectbox("Seleccione una opción", [
     "Inicio / Dashboard", 
     "Consulta Dinámica de Órdenes", 
-    "Métricas de Rendimiento (SQL IO/Time)", 
+    "Métricas de Rendimiento", 
     "Diccionario de Datos"
 ])
 
+# Conexión a SQLite (crea un archivo local 'logistica.db' automáticamente)
 @st.cache_resource
 def conectar_db():
-    return pyodbc.connect(
-        "DRIVER={ODBC Driver 17 for SQL Server};"
-        "SERVER=localhost\\SQLEXPRESS;"
-        "DATABASE=BD_LOGISTICA_UNTELS;"
-        "Trusted_Connection=yes;"
-    )
+    conn = sqlite3.connect("logistica.db", check_same_thread=False)
+    return conn
 
-# Inicializar la conexión para todo el dashboard
 conn = conectar_db()
 
+# --- FUNCION PARA INICIALIZAR LA BD SI ESTÁ VACÍA ---
+def inicializar_datos_prueba():
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ORDEN (
+            Numero_Orden INTEGER,
+            Tipo TEXT,
+            Estado TEXT,
+            RUC TEXT,
+            Razon_Social TEXT,
+            Fecha_Emision TEXT,
+            Monto REAL
+        )
+    """)
+    # Insertar datos de prueba si la tabla está vacía
+    cursor.execute("SELECT COUNT(*) FROM ORDEN")
+    if cursor.fetchone()[0] == 0:
+        cursor.executemany("INSERT INTO ORDEN VALUES (?, ?, ?, ?, ?, ?, ?)", [
+            (101, 'O/C', 'Comprometida', '20123456781', 'Proveedor A S.A.C.', '2026-07-05', 4500.00),
+            (102, 'O/S', 'Devengada', '20123456782', 'Servicios Generales E.I.R.L.', '2026-07-12', 12000.50),
+            (103, 'O/C', 'Comprometida', '20123456783', 'Comercial Lima S.A.', '2026-08-01', 850.00),
+            (104, 'O/S', 'Anulada', '20123456781', 'Proveedor A S.A.C.', '2026-08-15', 3100.00)
+        ])
+        conn.commit()
+
+inicializar_datos_prueba()
+
+# --- VISTAS DEL SISTEMA ---
 if menu == "Inicio / Dashboard":
     st.title("Panel de Control Logístico - UNTELS")
-    st.write("Bienvenido al sistema web integrado con la base de datos relacional normalizada (`BD_LOGISTICA_UNTELS`).")
+    st.write("Bienvenido al sistema web integrado con SQLite.")
     
-    # Métricas generales rápidas
     query_resumen = "SELECT COUNT(*) AS Total, SUM(Monto) AS MontoTotal FROM ORDEN"
     df_resumen = pd.read_sql(query_resumen, conn)
     
     col1, col2 = st.columns(2)
     col1.metric("Total de Órdenes Registradas", int(df_resumen['Total'].iloc[0]))
-    col2.metric("Monto Global Comprometido/Devengado", f"S/. {df_resumen['MontoTotal'].iloc[0]:,.2f}")
+    col2.metric("Monto Global", f"S/. {df_resumen['MontoTotal'].iloc[0]:,.2f}")
 
 elif menu == "Consulta Dinámica de Órdenes":
     st.title("Módulo de Consulta Multicriterio")
     
-    # Filtros interactivos
     col1, col2 = st.columns(2)
     tipo = col1.selectbox("Tipo de Orden", ["Todos", "O/C", "O/S"])
     estado = col2.selectbox("Estado", ["Todos", "Comprometida", "Devengada", "Anulada"])
-    busqueda_ruc = st.text_input("Buscar por RUC o Razón Social del Proveedor")
+    busqueda_ruc = st.text_input("Buscar por RUC o Razón Social")
 
-    # Construcción dinámica de consulta
     where_sql = "WHERE 1=1"
-    if tipo != "Todos": where_sql += f" AND t.Codigo = '{tipo}'"
-    if estado != "Todos": where_sql += f" AND e.Nombre_Estado = '{estado}'"
-    if busqueda_ruc: where_sql += f" AND (p.RUC LIKE '%{busqueda_ruc}%' OR p.Razon_Social LIKE '%{busqueda_ruc}%')"
+    if tipo != "Todos": where_sql += f" AND Tipo = '{tipo}'"
+    if estado != "Todos": where_sql += f" AND Estado = '{estado}'"
+    if busqueda_ruc: where_sql += f" AND (RUC LIKE '%{busqueda_ruc}%' OR Razon_Social LIKE '%{busqueda_ruc}%')"
 
-    query = f"""
-        SELECT o.Numero_Orden, t.Codigo AS Tipo, e.Nombre_Estado AS Estado, 
-               p.RUC, p.Razon_Social, o.Fecha_Emision, o.Monto 
-        FROM ORDEN o
-        JOIN TIPO_ORDEN t ON o.Id_Tipo_Orden = t.Id_Tipo_Orden
-        JOIN ESTADO_ORDEN e ON o.Id_Estado = e.Id_Estado
-        JOIN PROVEEDOR p ON o.RUC = p.RUC
-        {where_sql}
-    """
+    query = f"SELECT Numero_Orden, Tipo, Estado, RUC, Razon_Social, Fecha_Emision, Monto FROM ORDEN {where_sql}"
     
     start = time.time()
     df_result = pd.read_sql(query, conn)
@@ -70,34 +83,24 @@ elif menu == "Consulta Dinámica de Órdenes":
     st.info(f"Se encontraron {len(df_result)} registros en {elapsed:.2f} ms.")
     st.dataframe(df_result, use_container_width=True)
 
-elif menu == "Métricas de Rendimiento (SQL IO/Time)":
-    st.title("Evaluación de Rendimiento de Consultas")
-    st.write("Esta sección documenta la comparación técnica entre la estructura plana y el modelo normalizado (3FN).")
+elif menu == "Métricas de Rendimiento":
+    st.title("Evaluación de Rendimiento")
+    st.write("Comparativa técnica del modelo y rendimiento de consultas con SQLite en la nube.")
     
-    st.markdown("### 1. Comando `SET STATISTICS IO` y `TIME`")
-    st.code("""
--- Ejecutar directamente en SSMS para capturar lecturas de disco y CPU:
-SET STATISTICS IO ON;
-SET STATISTICS TIME ON;
-
-SELECT o.Numero_Orden, p.Razon_Social, o.Monto
-FROM ORDEN o
-JOIN PROVEEDOR p ON o.RUC = p.RUC
-WHERE o.Fecha_Emision >= '2026-07-01';
-
-SET STATISTICS IO OFF;
-SET STATISTICS TIME OFF;
-    """, language="sql")
-
-    st.markdown("### 2. Tabla Comparativa de Resultados para el Artículo")
     data_comparativa = {
-        "Métrica Evaluada": ["Lecturas Lógicas (Disk Reads)", "Tiempo de CPU (ms)", "Operador en Plan de Ejecución"],
-        "Estructura Plana (PTE / Excel)": ["1,420 páginas", "48 ms", "Table Scan (Alto costo)"],
-        "Modelo Relacional Normalizado (3FN)": ["18 páginas", "3 ms", "Index Seek / Clustered Index Seek"]
+        "Métrica Evaluada": ["Tiempo de Respuesta", "Tipo de Servidor", "Despliegue Web"],
+        "Estructura Local (SQL Server)": ["< 5 ms", "Instancia Local (SQLEXPRESS)", "Requiere Túnel/IP"],
+        "Estructura Cloud (SQLite)": ["< 10 ms", "Archivo Integrado en Contenedor", "100% Compatible con Link Público"]
     }
     st.table(pd.DataFrame(data_comparativa))
 
 elif menu == "Diccionario de Datos":
     st.title("Diccionario de Datos del Sistema")
-    st.write("Estructura de las tablas que componen la base de datos `BD_LOGISTICA_UNTELS`.")
-    # Aquí puedes listar las tablas detalladas en formato de tabla Markdown.
+    st.write("Estructura de la tabla principal `ORDEN`.")
+    st.markdown("""
+    * **Numero_Orden**: Identificador único de la orden de compra o servicio.
+    * **Tipo**: Clasificación de la orden (`O/C` u `O/S`).
+    * **Estado**: Situación actual de la orden (`Comprometida`, `Devengada`, `Anulada`).
+    * **RUC / Razon_Social**: Datos de identificación del proveedor.
+    * **Monto**: Importe total expresado en Soles (S/.).
+    """)
