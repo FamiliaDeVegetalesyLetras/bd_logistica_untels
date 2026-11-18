@@ -24,7 +24,13 @@ def conectar_db():
         "Trusted_Connection=yes;"
     )
 
-conn = conectar_db()
+conn = pyodbc.connect(
+    "DRIVER={ODBC Driver 17 for SQL Server};"
+    "SERVER=tu-servidor-en-azure.database.windows.net;"
+    "DATABASE=BD_LOGISTICA_UNTELS;"
+    "UID=tu_usuario;"
+    "PWD=tu_contraseña;"
+)
 
 if menu == "Inicio / Dashboard":
     st.title("Panel de Control Logístico - UNTELS")
