@@ -22,7 +22,6 @@ def conectar_db():
     return conn
 
 conn = conectar_db()
-
 # --- PROCESO ETL AUTOMÁTICO DESDE LOS EXCEL ---
 @st.cache_data
 def cargar_datos_excel():
@@ -42,11 +41,14 @@ def cargar_datos_excel():
     """)
     conn.commit()
     
-    # Verificar si ya tiene datos
+    # Verificar si la tabla está vacía para cargar los datos
     cursor.execute("SELECT COUNT(*) FROM ORDEN")
     if cursor.fetchone()[0] == 0:
-        # Rutas de tus archivos Excel en el repositorio
-        archivos = ["../data/julio.xlsx", "../data/agosto.xlsx"] # Ajusta la ruta según donde guardes tus excel
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        archivos = [
+            os.path.join(base_dir, "../data/julio.xlsx"),
+            os.path.join(base_dir, "../data/agosto.xlsx")
+        ]
         
         frames = []
         for archivo in archivos:
@@ -57,29 +59,27 @@ def cargar_datos_excel():
         if frames:
             df_total = pd.concat(frames, ignore_index=True)
             
-            # Limpieza y mapeo de columnas idéntico a tu SQL Server
-            # (Asegúrate de que los nombres coincidan con los encabezados de tus excels)
             for _, row in df_total.iterrows():
                 try:
-                    num_orden = int(row.get('Número de orden', 0))
-                    tipo = str(row.get('Tipo de Orden', 'O/C'))
+                    # Mapeo flexible adaptado a tus columnas exactas de SQL / Excel
+                    num_orden = int(row.get('Número de orden', row.get('Numero_Orden', 0)))
+                    tipo = str(row.get('Tipo de Orden', row.get('Tipo', 'O/C')))
                     estado = str(row.get('Estado', 'Comprometida'))
                     ruc = str(row.get('RUC', ''))
-                    razon = str(row.get('Denominación o razón Social', ''))
-                    fecha = str(row.get('Fecha de Emisión', '2026-07-01'))[:10]
+                    razon = str(row.get('Denominación o razón Social', row.get('Razon_Social', '')))
+                    fecha = str(row.get('Fecha de Emisión', row.get('Fecha_Emision', '2026-07-01')))[:10]
                     
-                    # Limpiar formato de moneda 'S/.'
-                    monto_raw = str(row.get('Monto', 0)).replace('S/.', '').replace(' ', '').replace(',', '')
-                    monto = float(monto_raw) if monto_raw else 0.0
+                    # Limpiar formato de moneda 'S/.' o espacios
+                    monto_raw = str(row.get('Monto', 0)).replace('S/.', '').replace('S/. ', '').replace(' ', '').replace(',', '')
+                    monto = float(monto_raw) if monto_raw and monto_raw != 'nan' else 0.0
                     
                     cursor.execute("""
                         INSERT INTO ORDEN VALUES (?, ?, ?, ?, ?, ?, ?)
                     """, (num_orden, tipo, estado, ruc, razon, fecha, monto))
-                except:
+                except Exception as e:
                     continue
             conn.commit()
 
-# Ejecutar la carga de datos
 cargar_datos_excel()
 
 # --- VISTAS DEL DASHBOARD ---
@@ -89,9 +89,12 @@ if menu == "Inicio / Dashboard":
     
     df_resumen = pd.read_sql("SELECT COUNT(*) AS Total, SUM(Monto) AS MontoTotal FROM ORDEN", conn)
     
+    total_ordenes = int(df_resumen['Total'].iloc[0]) if pd.notna(df_resumen['Total'].iloc[0]) else 0
+    monto_total = float(df_resumen['MontoTotal'].iloc[0]) if pd.notna(df_resumen['MontoTotal'].iloc[0]) else 0.0
+    
     col1, col2 = st.columns(2)
-    col1.metric("Total de Órdenes Reales Registradas", int(df_resumen['Total'].iloc[0]))
-    col2.metric("Monto Global Consolidado", f"S/. {df_resumen['MontoTotal'].iloc[0]:,.2f}")
+    col1.metric("Total de Órdenes Reales Registradas", total_ordenes)
+    col2.metric("Monto Global Consolidado", f"S/. {monto_total:,.2f}")
 
 elif menu == "Consulta Dinámica de Órdenes":
     st.title("Módulo de Consulta Multicriterio")
