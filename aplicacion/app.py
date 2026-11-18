@@ -14,7 +14,6 @@ menu = st.sidebar.selectbox("Seleccione una opción", [
     "Diccionario de Datos"
 ])
 
-# Conexión a SQL Server
 @st.cache_resource
 def conectar_db():
     return pyodbc.connect(
@@ -24,13 +23,8 @@ def conectar_db():
         "Trusted_Connection=yes;"
     )
 
-conn = pyodbc.connect(
-    "DRIVER={ODBC Driver 17 for SQL Server};"
-    "SERVER=tu-servidor-en-azure.database.windows.net;"
-    "DATABASE=BD_LOGISTICA_UNTELS;"
-    "UID=tu_usuario;"
-    "PWD=tu_contraseña;"
-)
+# Inicializar la conexión para todo el dashboard
+conn = conectar_db()
 
 if menu == "Inicio / Dashboard":
     st.title("Panel de Control Logístico - UNTELS")
